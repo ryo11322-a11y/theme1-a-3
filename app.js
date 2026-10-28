@@ -2,11 +2,11 @@ const createFolder = (id, name, children = []) => ({
   id,
   type: "folder",
   name,
-  unread: 0,
+  unread: 1,
   children,
 });
 
-const createChat = (id, name, unread = 0) => ({
+const createChat = (id, name, unread = 1) => ({
   id,
   type: "chat",
   name,
@@ -17,21 +17,21 @@ const createChat = (id, name, unread = 0) => ({
 const folders = [
   createFolder("sample-ooo", "○○部", [
     createChat("sample-ooo-talk", "雑談", 1),
-    createChat("sample-ooo-event", "行事", 0),
-    createChat("sample-ooo-work", "業務連絡", 0),
-    createChat("sample-ooo-attendance", "出欠", 0),
+    createChat("sample-ooo-event", "行事", 1),
+    createChat("sample-ooo-work", "業務連絡", 1),
+    createChat("sample-ooo-attendance", "出欠", 1),
   ]),
   createFolder("sample-circle", "サークル", [
-    createChat("sample-circle-fitness", "体育会", 0),
-    createChat("sample-circle-culture", "文化系", 0),
-    createChat("sample-circle-other", "その他", 0),
+    createChat("sample-circle-fitness", "体育会", 1),
+    createChat("sample-circle-culture", "文化系", 1),
+    createChat("sample-circle-other", "その他", 1),
   ]),
   createFolder("sample-edu", "学科関係", [
-    createChat("sample-edu-lecture", "講義連絡", 0),
-    createChat("sample-edu-seminar", "ゼミ", 0),
-    createChat("sample-edu-lab", "研究室", 0),
-    createChat("sample-edu-chat", "学科の雑談", 0),
-    createChat("sample-edu-other", "その他", 0),
+    createChat("sample-edu-lecture", "講義連絡", 1),
+    createChat("sample-edu-seminar", "ゼミ", 1),
+    createChat("sample-edu-lab", "研究室", 1),
+    createChat("sample-edu-chat", "学科の雑談", 1),
+    createChat("sample-edu-other", "その他", 1),
   ]),
 ];
 
@@ -116,6 +116,53 @@ function cancelRename() {
 
   renamingFolderId = null;
   closeRenameModal();
+}
+
+function showAddTypeModal() {
+  const modal = document.getElementById("addTypeModal");
+  if (!modal) return;
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+}
+
+function closeAddTypeModal() {
+  const modal = document.getElementById("addTypeModal");
+  if (!modal) return;
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function handleAddTypeSelection(type) {
+  closeAddTypeModal();
+
+  if (type === "chat") {
+    const selectedNode = selectedFolderId ? findNodeById(selectedFolderId) : null;
+    const parentFolder =
+      selectedNode && isFolder(selectedNode)
+        ? selectedNode
+        : findParentFolder(selectedFolderId || "") || null;
+
+    const targetArray = parentFolder ? parentFolder.children : folders;
+    const newChat = createChat(
+      `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      "新しいチャット",
+      1
+    );
+
+    targetArray.push(newChat);
+    if (parentFolder) {
+      expandedFolderIds.add(parentFolder.id);
+    }
+
+    selectedFolderId = newChat.id;
+    renderFolderList();
+    if (isMobileLayout()) {
+      openChatOnMobile();
+    }
+    return;
+  }
+
+  addFolder();
 }
 
 function addFolder() {
@@ -203,9 +250,24 @@ function updateContentPanel() {
     selectedNode.unread = 0;
     if (nameEl) nameEl.textContent = normalizeName(selectedNode.name || "Untitled");
     if (messageList) {
-      messageList.innerHTML = "";
+      const testMessage = "これはテストです。チャットは機能しません。本来はここにチャットの画面が表示されます。";
+      messageList.innerHTML = `
+        <div class="message-row">
+          <div class="avatar avatar-a">T</div>
+          <div class="message-bubble">
+            <div class="message-meta">
+              <span class="sender">Test</span>
+              <span class="time">今</span>
+            </div>
+            <p>${testMessage}</p>
+          </div>
+        </div>
+      `;
     }
-    if (composer) composer.textContent = "";
+    if (composer) {
+      composer.innerHTML = "";
+      composer.setAttribute("aria-label", "テストメッセージ");
+    }
   }
 }
 
@@ -306,7 +368,6 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
 
   const targetFolder = targetFolderId ? findNodeById(targetFolderId) : null;
 
-  // 自分の中に入れない
   if (
     isFolder(draggedNode) &&
     targetFolder &&
@@ -316,15 +377,12 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
     return;
   }
 
-  // 元の位置から削除
   sourceContext.parentArray.splice(sourceContext.index, 1);
 
-  // 移動先の配列
   const targetArray = targetFolder && isFolder(targetFolder)
     ? targetFolder.children
     : folders;
 
-  // どこに入れるか
   let insertIndex = targetArray.length;
   if (insertBeforeId) {
     const index = targetArray.findIndex((item) => item.id === insertBeforeId);
@@ -702,8 +760,30 @@ function renderFolderList() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const addButton = document.getElementById("addFolderButton");
-  if (addButton) addButton.addEventListener("click", addFolder);
+  const addFolderButton = document.getElementById("addFolderButton");
+  if (addFolderButton) addFolderButton.addEventListener("click", showAddTypeModal);
+
+  const addChatButton = document.getElementById("addChatButton");
+  if (addChatButton) addChatButton.addEventListener("click", showAddTypeModal);
+
+  const addTypeButtons = document.querySelectorAll("[data-add-type]");
+  addTypeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      handleAddTypeSelection(button.dataset.addType);
+    });
+  });
+
+  const closeAddTypeButton = document.getElementById("closeAddTypeModal");
+  if (closeAddTypeButton) {
+    closeAddTypeButton.addEventListener("click", closeAddTypeModal);
+  }
+
+  const addTypeModal = document.getElementById("addTypeModal");
+  if (addTypeModal) {
+    addTypeModal.addEventListener("click", (event) => {
+      if (event.target === addTypeModal) closeAddTypeModal();
+    });
+  }
 
   const channelActionButton = document.querySelector(".channel-action");
   if (channelActionButton) {
