@@ -72,6 +72,19 @@
       </div>
     </div>
 
+    <div class="modal" id="chatModal" aria-hidden="true">
+      <div class="modal-panel">
+        <h3>新しいチャットを追加</h3>
+        <p>保存先: <strong id="chatTargetFolderName">このフォルダ</strong></p>
+        <label class="sr-only" for="chatNameInput">新しいチャット名</label>
+        <input id="chatNameInput" type="text" maxlength="32" placeholder="チャット名を入力" />
+        <div class="modal-actions">
+          <button type="button" id="cancelChat" class="secondary-button">キャンセル</button>
+          <button type="button" id="saveChat" class="primary-button">保存</button>
+        </div>
+      </div>
+    </div>
+
     <script src="app.js" defer></script>
   </body>
 </html>
