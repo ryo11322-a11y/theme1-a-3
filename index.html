@@ -161,7 +161,6 @@
             <span class="channel-name">雑談</span>
             <small>11人</small>
           </div>
-          <button class="channel-action" type="button" aria-label="ファイル一覧を表示">☰</button>
         </header>
 
         <div class="message-list" aria-label="メッセージ一覧"></div>
@@ -199,6 +198,19 @@
         <div class="modal-actions">
           <button type="button" id="cancelDelete" class="secondary-button">キャンセル</button>
           <button type="button" id="confirmDelete" class="danger-button">削除</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="addTypeModal" aria-hidden="true">
+      <div class="modal-panel">
+        <h3>追加するものを選択</h3>
+        <div class="modal-actions" style="flex-direction: column; align-items: stretch;">
+          <button type="button" data-add-type="chat" class="primary-button" style="width: 100%; margin-bottom: 8px;">チャットを追加</button>
+          <button type="button" data-add-type="folder" class="secondary-button" style="width: 100%;">フォルダを追加</button>
+        </div>
+        <div class="modal-actions" style="margin-top: 12px;">
+          <button type="button" id="closeAddTypeModal" class="secondary-button" style="width: 100%;">閉じる</button>
         </div>
       </div>
     </div>
