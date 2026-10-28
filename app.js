@@ -206,8 +206,8 @@ function removeNodeById(nodeId, items = folders) {
   return false;
 }
 
-function moveNodeToDestination(nodeId, targetFolderId = null) {
-  if (!nodeId || nodeId === targetFolderId) return;
+function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = null) {
+  if (!nodeId) return;
 
   const draggedNode = findNodeById(nodeId);
   if (!draggedNode) return;
@@ -217,19 +217,32 @@ function moveNodeToDestination(nodeId, targetFolderId = null) {
 
   const targetFolder = targetFolderId ? findNodeById(targetFolderId) : null;
 
-  if (isFolder(draggedNode) && targetFolder && isFolder(targetFolder) && containsNodeId(draggedNode.id, targetFolder.id)) {
+  // 自分の中に入れない
+  if (
+    isFolder(draggedNode) &&
+    targetFolder &&
+    isFolder(targetFolder) &&
+    containsNodeId(draggedNode.id, targetFolder.id)
+  ) {
     return;
   }
 
+  // 元の位置から削除
   sourceContext.parentArray.splice(sourceContext.index, 1);
 
-  if (targetFolder && isFolder(targetFolder)) {
-    targetFolder.children.push(draggedNode);
-    expandedFolderIds.add(targetFolder.id);
-    return;
+  // 移動先の配列
+  const targetArray = targetFolder && isFolder(targetFolder)
+    ? targetFolder.children
+    : folders;
+
+  // どこに入れるか
+  let insertIndex = targetArray.length;
+  if (insertBeforeId) {
+    const index = targetArray.findIndex((item) => item.id === insertBeforeId);
+    if (index !== -1) insertIndex = index;
   }
 
-  folders.push(draggedNode);
+  targetArray.splice(insertIndex, 0, draggedNode);
 }
 
 function clearHoldTimer() {
@@ -483,18 +496,20 @@ function renderFolderList() {
         if (!draggedNodeId || draggedNodeId === item.id) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
-        row.classList.add("drop-target");
-      });
 
-      row.addEventListener("dragleave", () => {
-        row.classList.remove("drop-target");
+        const rect = row.getBoundingClientRect();
+        const isBefore = event.clientY < rect.top + rect.height / 2;
+
+        row.classList.add("drop-target");
+        row.dataset.insertBefore = String(isBefore);
       });
 
       row.addEventListener("drop", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        row.classList.remove("drop-target");
-        moveNodeToDestination(draggedNodeId, item.id);
+
+        const targetParentId = isFolder(item) ? item.id : null;
+        moveNodeToDestination(draggedNodeId, targetParentId, null);
         draggedNodeId = null;
         clearHoldTimer();
         renderFolderList();
@@ -572,7 +587,8 @@ document.addEventListener("DOMContentLoaded", () => {
       event.preventDefault();
       event.stopPropagation();
       folderList.classList.remove("drop-root");
-      moveNodeToDestination(draggedNodeId, null);
+
+      moveNodeToDestination(draggedNodeId, null, null);
       draggedNodeId = null;
       clearHoldTimer();
       renderFolderList();
