@@ -357,6 +357,36 @@ function addFolder() {
   openRenameModal(newFolder.id);
 }
 
+function addChat() {
+  const selectedNode = selectedFolderId
+    ? findNodeById(selectedFolderId)
+    : null;
+
+  const parentFolder =
+    selectedNode && isFolder(selectedNode)
+      ? selectedNode
+      : findParentFolder(selectedFolderId || "");
+
+  if (!parentFolder) {
+    alert("フォルダを選択してください");
+    return;
+  }
+
+  const newChat = createChat(
+    `chat-${Date.now()}`,
+    "Untitled Chat",
+    0
+  );
+
+  parentFolder.children.push(newChat);
+
+  expandedFolderIds.add(parentFolder.id);
+
+  selectedFolderId = newChat.id;
+
+  renderFolderList();
+}
+
 function renderFolderList() {
   const folderList = document.getElementById("folderList");
   if (!folderList) return;
@@ -544,7 +574,10 @@ function renderFolderList() {
 document.addEventListener("DOMContentLoaded", () => {
   const addButton = document.getElementById("addFolderButton");
   if (addButton) addButton.addEventListener("click", addFolder);
-
+  const addChatButton = document.getElementById("addChatButton");
+  if (addChatButton) {
+  addChatButton.addEventListener("click", addChat);
+  }
   const channelActionButton = document.querySelector(".channel-action");
   if (channelActionButton) {
     channelActionButton.addEventListener("click", () => {
