@@ -41,6 +41,8 @@ let deleteTargetId = null;
 const expandedFolderIds = new Set(["sample-ooo", "sample-circle", "sample-edu"]);
 let draggedNodeId = null;
 let holdTimer = null;
+let dragExpandTimer = null;
+let dragExpandFolderId = null;
 
 function isFolder(node) {
   return !!node && node.type === "folder";
@@ -245,29 +247,65 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
 }
 
 function getDropLocation(targetNodeId, clientY) {
+  if (!targetNodeId) return { targetFolderId: null, insertBeforeId: null };
+
   const targetNode = findNodeById(targetNodeId);
   if (!targetNode) return { targetFolderId: null, insertBeforeId: null };
-
-  if (isFolder(targetNode)) {
-    return { targetFolderId: targetNode.id, insertBeforeId: null };
-  }
 
   const parentFolder = findParentFolder(targetNodeId) || null;
   const parentArray = parentFolder ? parentFolder.children : folders;
   const index = parentArray.findIndex((item) => item.id === targetNodeId);
 
   if (index === -1) {
-    return { targetFolderId: parentFolder ? parentFolder.id : null, insertBeforeId: null };
+    return {
+      targetFolderId: parentFolder ? parentFolder.id : null,
+      insertBeforeId: null,
+    };
   }
 
   const row = document.querySelector(`[data-node-id="${CSS.escape(targetNodeId)}"]`);
   const rect = row?.getBoundingClientRect();
-  const isBefore = rect ? clientY < rect.top + rect.height / 2 : true;
+  if (!rect) {
+    return {
+      targetFolderId: isFolder(targetNode) ? targetNode.id : (parentFolder ? parentFolder.id : null),
+      insertBeforeId: null,
+    };
+  }
+
+  const yRatio = (clientY - rect.top) / rect.height;
   const nextSiblingId = parentArray[index + 1]?.id ?? null;
+
+  if (isFolder(targetNode)) {
+    if (yRatio < 0.35) {
+      return {
+        targetFolderId: parentFolder ? parentFolder.id : null,
+        insertBeforeId: targetNodeId,
+      };
+    }
+
+    if (yRatio > 0.65) {
+      return {
+        targetFolderId: parentFolder ? parentFolder.id : null,
+        insertBeforeId: nextSiblingId,
+      };
+    }
+
+    return {
+      targetFolderId: targetNode.id,
+      insertBeforeId: null,
+    };
+  }
+
+  if (yRatio < 0.5) {
+    return {
+      targetFolderId: parentFolder ? parentFolder.id : null,
+      insertBeforeId: targetNodeId,
+    };
+  }
 
   return {
     targetFolderId: parentFolder ? parentFolder.id : null,
-    insertBeforeId: isBefore ? targetNodeId : nextSiblingId,
+    insertBeforeId: nextSiblingId,
   };
 }
 
@@ -276,6 +314,38 @@ function clearHoldTimer() {
     clearTimeout(holdTimer);
     holdTimer = null;
   }
+}
+
+function clearDragExpandTimer() {
+  if (dragExpandTimer) {
+    clearTimeout(dragExpandTimer);
+    dragExpandTimer = null;
+  }
+  dragExpandFolderId = null;
+}
+
+function scheduleFolderExpand(folderId) {
+  if (!folderId || expandedFolderIds.has(folderId)) {
+    clearDragExpandTimer();
+    return;
+  }
+
+  const folder = findNodeById(folderId);
+  if (!folder || !isFolder(folder)) {
+    clearDragExpandTimer();
+    return;
+  }
+
+  clearDragExpandTimer();
+  dragExpandFolderId = folderId;
+  dragExpandTimer = setTimeout(() => {
+    const target = findNodeById(folderId);
+    if (target && isFolder(target) && !expandedFolderIds.has(folderId)) {
+      expandedFolderIds.add(folderId);
+      renderFolderList();
+    }
+    clearDragExpandTimer();
+  }, 450);
 }
 
 function openRenameModal(folderId) {
@@ -523,19 +593,33 @@ function renderFolderList() {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
 
-        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
-        const rect = row.getBoundingClientRect();
-        const isBefore = event.clientY < rect.top + rect.height / 2;
+        if (isFolder(item) && !expandedFolderIds.has(item.id)) {
+          scheduleFolderExpand(item.id);
+        } else {
+          clearDragExpandTimer();
+        }
 
-        row.classList.add("drop-target");
-        row.dataset.insertBefore = String(isBefore);
+        const rect = row.getBoundingClientRect();
+        const yRatio = (event.clientY - rect.top) / rect.height;
+        const isFolderTarget = isFolder(item);
+        const dropPosition = isFolderTarget
+          ? (yRatio < 0.35 ? "before" : yRatio > 0.65 ? "after" : "inside")
+          : (yRatio < 0.5 ? "before" : "after");
+
+        row.classList.remove("drop-before", "drop-after", "drop-inside");
+        row.classList.add("drop-target", `drop-${dropPosition}`);
+
+        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
+        row.dataset.insertBefore = String(event.clientY < rect.top + rect.height / 2);
         row.dataset.targetFolderId = targetFolderId || "";
         row.dataset.insertBeforeId = insertBeforeId || "";
+        row.dataset.dropPosition = dropPosition;
       });
 
       row.addEventListener("drop", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        clearDragExpandTimer();
 
         const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
         moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
@@ -545,7 +629,8 @@ function renderFolderList() {
       });
 
       row.addEventListener("dragend", () => {
-        row.classList.remove("drag-source", "drop-target");
+        row.classList.remove("drag-source", "drop-target", "drop-before", "drop-after", "drop-inside");
+        clearDragExpandTimer();
         draggedNodeId = null;
         clearHoldTimer();
       });
@@ -604,20 +689,29 @@ document.addEventListener("DOMContentLoaded", () => {
   if (folderList) {
     folderList.addEventListener("dragover", (event) => {
       if (!draggedNodeId) return;
+      const targetRow = document.elementFromPoint(event.clientX, event.clientY)?.closest(".folder-row");
+      if (!targetRow) {
+        folderList.classList.remove("drop-root");
+        clearDragExpandTimer();
+        return;
+      }
       event.preventDefault();
       folderList.classList.add("drop-root");
-    });
-
-    folderList.addEventListener("dragleave", () => {
-      folderList.classList.remove("drop-root");
     });
 
     folderList.addEventListener("drop", (event) => {
       event.preventDefault();
       event.stopPropagation();
       folderList.classList.remove("drop-root");
+      clearDragExpandTimer();
 
-      moveNodeToDestination(draggedNodeId, null, null);
+      const targetRow = document.elementFromPoint(event.clientX, event.clientY)?.closest(".folder-row");
+      if (!targetRow || !targetRow.dataset.nodeId) {
+        return;
+      }
+
+      const { targetFolderId, insertBeforeId } = getDropLocation(targetRow.dataset.nodeId, event.clientY);
+      moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
       draggedNodeId = null;
       clearHoldTimer();
       renderFolderList();
