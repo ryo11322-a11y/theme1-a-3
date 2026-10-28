@@ -189,7 +189,6 @@ function removeNodeById(nodeId, items = folders) {
   const index = items.findIndex((item) => item.id === nodeId);
   if (index !== -1) {
     const [removedItem] = items.splice(index, 1);
-
     if (removedItem && isFolder(removedItem) && Array.isArray(removedItem.children)) {
       items.splice(index, 0, ...removedItem.children);
     }
