@@ -38,6 +38,7 @@ const folders = [
 let selectedFolderId = null;
 let renamingFolderId = null;
 let deleteTargetId = null;
+let creatingChatParentId = null;
 const expandedFolderIds = new Set(["sample-ooo", "sample-circle", "sample-edu"]);
 let draggedNodeId = null;
 let holdTimer = null;
@@ -344,6 +345,16 @@ function getHoveredFolderRow(event) {
   return document.elementFromPoint(event.clientX, event.clientY)?.closest(".folder-row") || null;
 }
 
+function getTargetParentFolderForNewNode() {
+  const selectedNode = selectedFolderId ? findNodeById(selectedFolderId) : null;
+  return selectedNode && isFolder(selectedNode)
+    ? selectedNode
+    : findParentFolder(selectedFolderId || "") || null;
+}
+
+function openRenameModal(folderId) {
+  const folder = findNodeById(folderId);
+  if (!folder || !isFolder(folder)) return;
 function getDropLocation(targetNodeId, clientY) {
   if (!targetNodeId) return { targetFolderId: null, insertBeforeId: null };
 
@@ -495,6 +506,89 @@ function confirmDelete() {
 function cancelDelete() {
   deleteTargetId = null;
   closeDeleteModal();
+}
+
+function addFolder() {
+  const parentFolder = getTargetParentFolderForNewNode();
+  const targetArray = parentFolder ? parentFolder.children : folders;
+  const newFolder = createFolder(
+    `folder-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    "Untitled",
+    []
+  );
+
+  targetArray.push(newFolder);
+  if (parentFolder) {
+    expandedFolderIds.add(parentFolder.id);
+  }
+
+  selectedFolderId = newFolder.id;
+  renderFolderList();
+  openRenameModal(newFolder.id);
+}
+
+function openAddChatModal() {
+  const parentFolder = getTargetParentFolderForNewNode();
+  if (!parentFolder) {
+    alert("フォルダを選択してください");
+    return;
+  }
+
+  creatingChatParentId = parentFolder.id;
+
+  const modal = document.getElementById("chatModal");
+  const input = document.getElementById("chatNameInput");
+  const targetName = document.getElementById("chatTargetFolderName");
+  if (!modal || !input || !targetName) return;
+
+  input.value = "";
+  targetName.textContent = normalizeName(parentFolder.name || "Untitled");
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeAddChatModal() {
+  const modal = document.getElementById("chatModal");
+  if (!modal) return;
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function saveChatName() {
+  if (!creatingChatParentId) return;
+
+  const parentFolder = findNodeById(creatingChatParentId);
+  if (!parentFolder || !isFolder(parentFolder)) return;
+
+  const input = document.getElementById("chatNameInput");
+  const name = normalizeName(input?.value || "");
+  const newChat = createChat(
+    `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    name,
+    0
+  );
+
+  parentFolder.children.push(newChat);
+  expandedFolderIds.add(parentFolder.id);
+
+  creatingChatParentId = null;
+  selectedFolderId = newChat.id;
+  closeAddChatModal();
+  renderFolderList();
+  updateContentPanel();
+  if (isMobileLayout()) {
+    openChatOnMobile();
+  }
+}
+
+function cancelAddChat() {
+  creatingChatParentId = null;
+  closeAddChatModal();
+}
+
+function addChat() {
+  openAddChatModal();
 }
 
 function renderFolderList() {
@@ -705,6 +799,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const addButton = document.getElementById("addFolderButton");
   if (addButton) addButton.addEventListener("click", addFolder);
 
+  const addChatButton = document.getElementById("addChatButton");
+  if (addChatButton) {
+    addChatButton.addEventListener("click", addChat);
+  }
+
   const channelActionButton = document.querySelector(".channel-action");
   if (channelActionButton) {
     channelActionButton.addEventListener("click", () => {
@@ -724,11 +823,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("saveRename")?.addEventListener("click", saveFolderName);
   document.getElementById("cancelRename")?.addEventListener("click", cancelRename);
+  document.getElementById("saveChat")?.addEventListener("click", saveChatName);
+  document.getElementById("cancelChat")?.addEventListener("click", cancelAddChat);
   document.getElementById("confirmDelete")?.addEventListener("click", confirmDelete);
   document.getElementById("cancelDelete")?.addEventListener("click", cancelDelete);
+
   document.getElementById("renameInput")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") saveFolderName();
     if (event.key === "Escape") cancelRename();
+  });
+
+  document.getElementById("chatNameInput")?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") saveChatName();
+    if (event.key === "Escape") cancelAddChat();
   });
 
   const folderList = document.getElementById("folderList");
@@ -798,6 +905,7 @@ document.addEventListener("DOMContentLoaded", () => {
   selectedFolderId = null;
   renamingFolderId = null;
   deleteTargetId = null;
+  creatingChatParentId = null;
   setMobileView("files");
   updateContentPanel();
   renderFolderList();
