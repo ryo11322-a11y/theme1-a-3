@@ -43,6 +43,104 @@ let draggedNodeId = null;
 let holdTimer = null;
 let dragExpandTimer = null;
 let dragExpandFolderId = null;
+let pendingNewFolderId = null;
+
+function setRenameModalMode(mode) {
+  const modal = document.getElementById("renameModal");
+  if (!modal) return;
+
+  const titleEl =
+    document.getElementById("renameModalTitle") ||
+    modal.querySelector("[data-rename-title]") ||
+    modal.querySelector(".rename-modal__title") ||
+    modal.querySelector("h2") ||
+    modal.querySelector("h3");
+
+  if (titleEl) {
+    titleEl.textContent = mode === "create" ? "フォルダを追加" : "フォルダ名を変更";
+  }
+
+  modal.dataset.mode = mode;
+}
+
+function openRenameModal(folderId, mode = "rename") {
+  const folder = findNodeById(folderId);
+  if (!folder || !isFolder(folder)) return;
+
+  renamingFolderId = folderId;
+  selectedFolderId = folderId;
+  pendingNewFolderId = mode === "create" ? folderId : null;
+
+  const input = document.getElementById("renameInput");
+  const modal = document.getElementById("renameModal");
+  if (!input || !modal) return;
+
+  setRenameModalMode(mode);
+  input.value = folder.name || "";
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeRenameModal() {
+  const modal = document.getElementById("renameModal");
+  if (!modal) return;
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function saveFolderName() {
+  if (!renamingFolderId) return;
+
+  const folder = findNodeById(renamingFolderId);
+  if (!folder || !isFolder(folder)) return;
+
+  const input = document.getElementById("renameInput");
+  folder.name = normalizeName(input?.value || "");
+
+  pendingNewFolderId = null;
+  renamingFolderId = null;
+  closeRenameModal();
+  renderFolderList();
+}
+
+function cancelRename() {
+  if (renamingFolderId && pendingNewFolderId === renamingFolderId) {
+    removeNodeById(renamingFolderId);
+    if (selectedFolderId === renamingFolderId) {
+      selectedFolderId = null;
+    }
+    pendingNewFolderId = null;
+    renderFolderList();
+  }
+
+  renamingFolderId = null;
+  closeRenameModal();
+}
+
+function addFolder() {
+  const selectedNode = selectedFolderId ? findNodeById(selectedFolderId) : null;
+  const parentFolder =
+    selectedNode && isFolder(selectedNode)
+      ? selectedNode
+      : findParentFolder(selectedFolderId || "") || null;
+
+  const targetArray = parentFolder ? parentFolder.children : folders;
+  const newFolder = createFolder(
+    `folder-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    "Untitled",
+    []
+  );
+
+  targetArray.push(newFolder);
+  if (parentFolder) {
+    expandedFolderIds.add(parentFolder.id);
+  }
+
+  selectedFolderId = newFolder.id;
+  renderFolderList();
+  openRenameModal(newFolder.id, "create");
+}
 
 function isFolder(node) {
   return !!node && node.type === "folder";
@@ -105,19 +203,9 @@ function updateContentPanel() {
     selectedNode.unread = 0;
     if (nameEl) nameEl.textContent = normalizeName(selectedNode.name || "Untitled");
     if (messageList) {
-      const testMessage = selectedNode.id === "sample-ooo-talk";
-      messageList.innerHTML = testMessage
-        ? `
-          <div class="message-row">
-            <div class="avatar avatar-a">A</div>
-            <div class="message-bubble">
-              <div class="message-meta"><span class="sender">A</span><span class="time">09:00</span></div>
-              <p>テストメッセージ</p>
-            </div>
-          </div>
-        `
-        : "";
+      messageList.innerHTML = "";
     }
+    if (composer) composer.textContent = "";
   }
 }
 
@@ -348,49 +436,6 @@ function scheduleFolderExpand(folderId) {
   }, 450);
 }
 
-function openRenameModal(folderId) {
-  const folder = findNodeById(folderId);
-  if (!folder || !isFolder(folder)) return;
-
-  renamingFolderId = folderId;
-  selectedFolderId = folderId;
-
-  const input = document.getElementById("renameInput");
-  const modal = document.getElementById("renameModal");
-  if (!input || !modal) return;
-
-  input.value = folder.name || "";
-  modal.classList.add("show");
-  modal.setAttribute("aria-hidden", "false");
-  setTimeout(() => input.focus(), 50);
-}
-
-function closeRenameModal() {
-  const modal = document.getElementById("renameModal");
-  if (!modal) return;
-  modal.classList.remove("show");
-  modal.setAttribute("aria-hidden", "true");
-}
-
-function saveFolderName() {
-  if (!renamingFolderId) return;
-
-  const folder = findNodeById(renamingFolderId);
-  if (!folder || !isFolder(folder)) return;
-
-  const input = document.getElementById("renameInput");
-  folder.name = normalizeName(input?.value || "");
-
-  renamingFolderId = null;
-  closeRenameModal();
-  renderFolderList();
-}
-
-function cancelRename() {
-  renamingFolderId = null;
-  closeRenameModal();
-}
-
 function openDeleteModal(folderId) {
   const folder = findNodeById(folderId);
   if (!folder || !isFolder(folder)) return;
@@ -428,29 +473,6 @@ function confirmDelete() {
 function cancelDelete() {
   deleteTargetId = null;
   closeDeleteModal();
-}
-
-function addFolder() {
-  const selectedNode = selectedFolderId ? findNodeById(selectedFolderId) : null;
-  const parentFolder = selectedNode && isFolder(selectedNode)
-    ? selectedNode
-    : findParentFolder(selectedFolderId || "") || null;
-
-  const targetArray = parentFolder ? parentFolder.children : folders;
-  const newFolder = createFolder(
-    `folder-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    "Untitled",
-    []
-  );
-
-  targetArray.push(newFolder);
-  if (parentFolder) {
-    expandedFolderIds.add(parentFolder.id);
-  }
-
-  selectedFolderId = newFolder.id;
-  renderFolderList();
-  openRenameModal(newFolder.id);
 }
 
 function renderFolderList() {
