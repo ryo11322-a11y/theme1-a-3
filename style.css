@@ -678,11 +678,28 @@ button {
   }
 
   .channel-back {
-    display: none;
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: 6px;
+    position: relative;
+    z-index: 2;
   }
 
   .channel-action {
-    display: inline-flex;
+    display: none;
+  }
+
+  .channel-header {
+    padding: 14px 14px 10px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    gap: 8px;
+  }
+
+  .channel-meta {
+    flex: 1;
+    min-width: 0;
   }
 
   .message-bubble {
@@ -700,13 +717,6 @@ button {
     bottom: 12px;
   }
 
-  .channel-header {
-    padding: 14px 14px 10px;
-    position: sticky;
-    top: 0;
-    z-index: 5;
-  }
-
   .message-list {
     padding-bottom: 88px;
     -webkit-overflow-scrolling: touch;
@@ -721,14 +731,6 @@ button {
     width: 26px;
     height: 26px;
     display: none;
-  }
-
-  .channel-action {
-    font-size: 20px;
-    font-weight: 700;
-    background: rgba(146, 167, 188, 0.12);
-    position: relative;
-    z-index: 2;
   }
 
   .empty-state {
