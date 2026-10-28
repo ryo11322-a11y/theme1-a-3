@@ -334,6 +334,16 @@ function clearDragExpandTimer() {
   dragExpandFolderId = null;
 }
 
+function clearDropHighlights() {
+  document.querySelectorAll(".folder-row").forEach((row) => {
+    row.classList.remove("drop-target", "drop-before", "drop-after", "drop-inside");
+    delete row.dataset.dropPosition;
+    delete row.dataset.insertBefore;
+    delete row.dataset.targetFolderId;
+    delete row.dataset.insertBeforeId;
+  });
+}
+
 function scheduleFolderExpand(folderId) {
   if (!folderId || expandedFolderIds.has(folderId)) {
     clearDragExpandTimer();
@@ -345,6 +355,8 @@ function scheduleFolderExpand(folderId) {
     clearDragExpandTimer();
     return;
   }
+
+  if (dragExpandFolderId === folderId && dragExpandTimer) return;
 
   clearDragExpandTimer();
   dragExpandFolderId = folderId;
@@ -603,6 +615,8 @@ function renderFolderList() {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
 
+        clearDropHighlights();
+
         if (isFolder(item) && !expandedFolderIds.has(item.id)) {
           scheduleFolderExpand(item.id);
         } else {
@@ -616,7 +630,6 @@ function renderFolderList() {
           ? (yRatio < 0.35 ? "before" : yRatio > 0.65 ? "after" : "inside")
           : (yRatio < 0.5 ? "before" : "after");
 
-        row.classList.remove("drop-before", "drop-after", "drop-inside");
         row.classList.add("drop-target", `drop-${dropPosition}`);
 
         const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
@@ -640,6 +653,7 @@ function renderFolderList() {
 
       row.addEventListener("dragend", () => {
         row.classList.remove("drag-source", "drop-target", "drop-before", "drop-after", "drop-inside");
+        clearDropHighlights();
         clearDragExpandTimer();
         draggedNodeId = null;
         clearHoldTimer();
@@ -699,6 +713,8 @@ document.addEventListener("DOMContentLoaded", () => {
   if (folderList) {
     folderList.addEventListener("dragover", (event) => {
       if (!draggedNodeId) return;
+
+      clearDropHighlights();
       const targetRow = getHoveredFolderRow(event);
       if (!targetRow) {
         event.preventDefault();
@@ -707,18 +723,22 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      const targetNode = findNodeById(targetRow.dataset.nodeId);
+      if (targetNode && isFolder(targetNode) && !expandedFolderIds.has(targetNode.id)) {
+        scheduleFolderExpand(targetNode.id);
+      } else {
+        clearDragExpandTimer();
+      }
+
       folderList.classList.remove("drop-root");
       event.preventDefault();
-    });
-
-    folderList.addEventListener("dragleave", () => {
-      folderList.classList.remove("drop-root");
     });
 
     folderList.addEventListener("drop", (event) => {
       event.preventDefault();
       event.stopPropagation();
       folderList.classList.remove("drop-root");
+      clearDropHighlights();
       clearDragExpandTimer();
 
       const targetRow = getHoveredFolderRow(event);
