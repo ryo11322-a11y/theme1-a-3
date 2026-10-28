@@ -5,8 +5,139 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Chat File Manager</title>
     <link rel="stylesheet" href="style.css" />
+    <style>
+      .help-button {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 1000;
+        width: 40px;
+        height: 40px;
+        border: none;
+        border-radius: 50%;
+        background: #2f6fed;
+        color: #fff;
+        font-size: 1.4rem;
+        font-weight: 700;
+        box-shadow: 0 8px 20px rgba(47, 111, 237, 0.25);
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .help-button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(47, 111, 237, 0.32);
+      }
+
+      .help-button:focus-visible {
+        outline: 3px solid rgba(47, 111, 237, 0.4);
+        outline-offset: 2px;
+      }
+
+      .help-overlay {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(15, 23, 42, 0.5);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.2s ease, visibility 0.2s ease;
+        z-index: 2000;
+      }
+
+      .help-overlay.is-open {
+        opacity: 1;
+        visibility: visible;
+      }
+
+      .help-panel {
+        width: min(92vw, 560px);
+        max-height: 80vh;
+        overflow: auto;
+        background: #fff;
+        border-radius: 20px;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+        padding: 24px 24px 18px;
+        position: relative;
+      }
+
+      .help-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+
+      .help-header h2 {
+        margin: 0;
+        font-size: 1.3rem;
+        color: #1f2937;
+      }
+
+      .help-close {
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 50%;
+        background: #eef3ff;
+        color: #2f6fed;
+        font-size: 1.5rem;
+        cursor: pointer;
+      }
+
+      .help-body {
+        color: #374151;
+      }
+
+      .help-list {
+        margin: 0;
+        padding-left: 1.2rem;
+        line-height: 1.9;
+      }
+
+      .help-list li + li {
+        margin-top: 8px;
+      }
+
+      .help-note {
+        margin-top: 18px;
+        padding: 12px 14px;
+        background: #f5f8ff;
+        border-radius: 12px;
+        font-size: 0.95rem;
+        color: #3b4b73;
+      }
+    </style>
   </head>
   <body>
+    <div class="help-overlay" id="helpOverlay" aria-hidden="true" hidden>
+      <div class="help-panel" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+        <div class="help-header">
+          <h2 id="helpTitle">操作方法</h2>
+          <button type="button" class="help-close" id="helpClose" aria-label="閉じる">×</button>
+        </div>
+
+        <div class="help-body">
+          <ol class="help-list">
+            <li>左側のフォルダ一覧から対象のチャットを選択します。</li>
+            <li>「＋」ボタンで新しいフォルダを追加できます。</li>
+            <li>フォルダ名の変更は、フォルダのメニューから「名前を変更」を選択してください。</li>
+            <li>不要なフォルダは削除ボタンで削除できます。</li>
+            <li>メッセージの送信や閲覧は中央のチャット画面で行います。</li>
+          </ol>
+
+          <div class="help-note">
+            画面上の各ボタンを押すと、対応する操作を実行できます。<br />
+            閉じるには「×」ボタンまたは Esc キーを押してください。
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="app-shell mobile-files-open">
       <aside class="sidebar" aria-label="フォルダ一覧">
         <div class="sidebar-header">
@@ -85,6 +216,50 @@
       </div>
     </div>
 
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const helpButton = document.createElement("button");
+        helpButton.type = "button";
+        helpButton.className = "help-button";
+        helpButton.setAttribute("aria-label", "ヘルプ");
+        helpButton.title = "ヘルプ";
+        helpButton.textContent = "?";
+
+        const helpOverlay = document.getElementById("helpOverlay");
+        const helpClose = document.getElementById("helpClose");
+
+        if (!helpOverlay || !helpClose) return;
+
+        const openHelp = () => {
+          helpOverlay.hidden = false;
+          helpOverlay.setAttribute("aria-hidden", "false");
+          requestAnimationFrame(() => helpOverlay.classList.add("is-open"));
+        };
+
+        const closeHelp = () => {
+          helpOverlay.classList.remove("is-open");
+          helpOverlay.setAttribute("aria-hidden", "true");
+          setTimeout(() => {
+            helpOverlay.hidden = true;
+          }, 200);
+        };
+
+        helpButton.addEventListener("click", openHelp);
+        helpClose.addEventListener("click", closeHelp);
+
+        helpOverlay.addEventListener("click", (event) => {
+          if (event.target === helpOverlay) closeHelp();
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && !helpOverlay.hidden) {
+            closeHelp();
+          }
+        });
+
+        document.body.appendChild(helpButton);
+      });
+    </script>
     <script src="app.js" defer></script>
   </body>
 </html>

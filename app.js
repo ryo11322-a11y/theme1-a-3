@@ -42,6 +42,106 @@ let creatingChatParentId = null;
 const expandedFolderIds = new Set(["sample-ooo", "sample-circle", "sample-edu"]);
 let draggedNodeId = null;
 let holdTimer = null;
+let dragExpandTimer = null;
+let dragExpandFolderId = null;
+let pendingNewFolderId = null;
+
+function setRenameModalMode(mode) {
+  const modal = document.getElementById("renameModal");
+  if (!modal) return;
+
+  const titleEl =
+    document.getElementById("renameModalTitle") ||
+    modal.querySelector("[data-rename-title]") ||
+    modal.querySelector(".rename-modal__title") ||
+    modal.querySelector("h2") ||
+    modal.querySelector("h3");
+
+  if (titleEl) {
+    titleEl.textContent = mode === "create" ? "フォルダを追加" : "フォルダ名を変更";
+  }
+
+  modal.dataset.mode = mode;
+}
+
+function openRenameModal(folderId, mode = "rename") {
+  const folder = findNodeById(folderId);
+  if (!folder || !isFolder(folder)) return;
+
+  renamingFolderId = folderId;
+  selectedFolderId = folderId;
+  pendingNewFolderId = mode === "create" ? folderId : null;
+
+  const input = document.getElementById("renameInput");
+  const modal = document.getElementById("renameModal");
+  if (!input || !modal) return;
+
+  setRenameModalMode(mode);
+  input.value = folder.name || "";
+  modal.classList.add("show");
+  modal.setAttribute("aria-hidden", "false");
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeRenameModal() {
+  const modal = document.getElementById("renameModal");
+  if (!modal) return;
+  modal.classList.remove("show");
+  modal.setAttribute("aria-hidden", "true");
+}
+
+function saveFolderName() {
+  if (!renamingFolderId) return;
+
+  const folder = findNodeById(renamingFolderId);
+  if (!folder || !isFolder(folder)) return;
+
+  const input = document.getElementById("renameInput");
+  folder.name = normalizeName(input?.value || "");
+
+  pendingNewFolderId = null;
+  renamingFolderId = null;
+  closeRenameModal();
+  renderFolderList();
+}
+
+function cancelRename() {
+  if (renamingFolderId && pendingNewFolderId === renamingFolderId) {
+    removeNodeById(renamingFolderId);
+    if (selectedFolderId === renamingFolderId) {
+      selectedFolderId = null;
+    }
+    pendingNewFolderId = null;
+    renderFolderList();
+  }
+
+  renamingFolderId = null;
+  closeRenameModal();
+}
+
+function addFolder() {
+  const selectedNode = selectedFolderId ? findNodeById(selectedFolderId) : null;
+  const parentFolder =
+    selectedNode && isFolder(selectedNode)
+      ? selectedNode
+      : findParentFolder(selectedFolderId || "") || null;
+
+  const targetArray = parentFolder ? parentFolder.children : folders;
+  const newFolder = createFolder(
+    `folder-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    "Untitled",
+    []
+  );
+
+  targetArray.push(newFolder);
+  if (parentFolder) {
+    expandedFolderIds.add(parentFolder.id);
+  }
+
+  selectedFolderId = newFolder.id;
+  renderFolderList();
+  openRenameModal(newFolder.id, "create");
+}
 
 function isFolder(node) {
   return !!node && node.type === "folder";
@@ -104,19 +204,9 @@ function updateContentPanel() {
     selectedNode.unread = 0;
     if (nameEl) nameEl.textContent = normalizeName(selectedNode.name || "Untitled");
     if (messageList) {
-      const testMessage = selectedNode.id === "sample-ooo-talk";
-      messageList.innerHTML = testMessage
-        ? `
-          <div class="message-row">
-            <div class="avatar avatar-a">A</div>
-            <div class="message-bubble">
-              <div class="message-meta"><span class="sender">A</span><span class="time">09:00</span></div>
-              <p>テストメッセージ</p>
-            </div>
-          </div>
-        `
-        : "";
+      messageList.innerHTML = "";
     }
+    if (composer) composer.textContent = "";
   }
 }
 
@@ -190,7 +280,6 @@ function removeNodeById(nodeId, items = folders) {
   const index = items.findIndex((item) => item.id === nodeId);
   if (index !== -1) {
     const [removedItem] = items.splice(index, 1);
-
     if (removedItem && isFolder(removedItem) && Array.isArray(removedItem.children)) {
       items.splice(index, 0, ...removedItem.children);
     }
@@ -246,11 +335,14 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
   targetArray.splice(insertIndex, 0, draggedNode);
 }
 
-function clearHoldTimer() {
-  if (holdTimer) {
-    clearTimeout(holdTimer);
-    holdTimer = null;
+function getHoveredFolderRow(event) {
+  const target = event.target;
+  if (target instanceof Element) {
+    const row = target.closest(".folder-row");
+    if (row) return row;
   }
+
+  return document.elementFromPoint(event.clientX, event.clientY)?.closest(".folder-row") || null;
 }
 
 function getTargetParentFolderForNewNode() {
@@ -263,44 +355,118 @@ function getTargetParentFolderForNewNode() {
 function openRenameModal(folderId) {
   const folder = findNodeById(folderId);
   if (!folder || !isFolder(folder)) return;
+function getDropLocation(targetNodeId, clientY) {
+  if (!targetNodeId) return { targetFolderId: null, insertBeforeId: null };
 
-  renamingFolderId = folderId;
-  selectedFolderId = folderId;
+  const targetNode = findNodeById(targetNodeId);
+  if (!targetNode) return { targetFolderId: null, insertBeforeId: null };
 
-  const input = document.getElementById("renameInput");
-  const modal = document.getElementById("renameModal");
-  if (!input || !modal) return;
+  const parentFolder = findParentFolder(targetNodeId) || null;
+  const parentArray = parentFolder ? parentFolder.children : folders;
+  const index = parentArray.findIndex((item) => item.id === targetNodeId);
 
-  input.value = folder.name || "";
-  modal.classList.add("show");
-  modal.setAttribute("aria-hidden", "false");
-  setTimeout(() => input.focus(), 50);
+  if (index === -1) {
+    return {
+      targetFolderId: parentFolder ? parentFolder.id : null,
+      insertBeforeId: null,
+    };
+  }
+
+  const row = document.querySelector(`[data-node-id="${CSS.escape(targetNodeId)}"]`);
+  const rect = row?.getBoundingClientRect();
+  if (!rect) {
+    return {
+      targetFolderId: isFolder(targetNode) ? targetNode.id : (parentFolder ? parentFolder.id : null),
+      insertBeforeId: null,
+    };
+  }
+
+  const yRatio = (clientY - rect.top) / rect.height;
+  const nextSiblingId = parentArray[index + 1]?.id ?? null;
+
+  if (isFolder(targetNode)) {
+    if (yRatio < 0.35) {
+      return {
+        targetFolderId: parentFolder ? parentFolder.id : null,
+        insertBeforeId: targetNodeId,
+      };
+    }
+
+    if (yRatio > 0.65) {
+      return {
+        targetFolderId: parentFolder ? parentFolder.id : null,
+        insertBeforeId: nextSiblingId,
+      };
+    }
+
+    return {
+      targetFolderId: targetNode.id,
+      insertBeforeId: null,
+    };
+  }
+
+  if (yRatio < 0.5) {
+    return {
+      targetFolderId: parentFolder ? parentFolder.id : null,
+      insertBeforeId: targetNodeId,
+    };
+  }
+
+  return {
+    targetFolderId: parentFolder ? parentFolder.id : null,
+    insertBeforeId: nextSiblingId,
+  };
 }
 
-function closeRenameModal() {
-  const modal = document.getElementById("renameModal");
-  if (!modal) return;
-  modal.classList.remove("show");
-  modal.setAttribute("aria-hidden", "true");
+function clearHoldTimer() {
+  if (holdTimer) {
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
 }
 
-function saveFolderName() {
-  if (!renamingFolderId) return;
-
-  const folder = findNodeById(renamingFolderId);
-  if (!folder || !isFolder(folder)) return;
-
-  const input = document.getElementById("renameInput");
-  folder.name = normalizeName(input?.value || "");
-
-  renamingFolderId = null;
-  closeRenameModal();
-  renderFolderList();
+function clearDragExpandTimer() {
+  if (dragExpandTimer) {
+    clearTimeout(dragExpandTimer);
+    dragExpandTimer = null;
+  }
+  dragExpandFolderId = null;
 }
 
-function cancelRename() {
-  renamingFolderId = null;
-  closeRenameModal();
+function clearDropHighlights() {
+  document.querySelectorAll(".folder-row").forEach((row) => {
+    row.classList.remove("drop-target", "drop-before", "drop-after", "drop-inside");
+    delete row.dataset.dropPosition;
+    delete row.dataset.insertBefore;
+    delete row.dataset.targetFolderId;
+    delete row.dataset.insertBeforeId;
+  });
+}
+
+function scheduleFolderExpand(folderId) {
+  if (!folderId || expandedFolderIds.has(folderId)) {
+    clearDragExpandTimer();
+    return;
+  }
+
+  const folder = findNodeById(folderId);
+  if (!folder || !isFolder(folder)) {
+    clearDragExpandTimer();
+    return;
+  }
+
+  if (dragExpandFolderId === folderId && dragExpandTimer) return;
+
+  clearDragExpandTimer();
+  dragExpandFolderId = folderId;
+  dragExpandTimer = setTimeout(() => {
+    const target = findNodeById(folderId);
+    if (target && isFolder(target) && !expandedFolderIds.has(folderId)) {
+      expandedFolderIds.add(folderId);
+      renderFolderList();
+    }
+    clearDragExpandTimer();
+  }, 450);
 }
 
 function openDeleteModal(folderId) {
@@ -565,26 +731,46 @@ function renderFolderList() {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
 
-        const rect = row.getBoundingClientRect();
-        const isBefore = event.clientY < rect.top + rect.height / 2;
+        clearDropHighlights();
 
-        row.classList.add("drop-target");
-        row.dataset.insertBefore = String(isBefore);
+        if (isFolder(item) && !expandedFolderIds.has(item.id)) {
+          scheduleFolderExpand(item.id);
+        } else {
+          clearDragExpandTimer();
+        }
+
+        const rect = row.getBoundingClientRect();
+        const yRatio = (event.clientY - rect.top) / rect.height;
+        const isFolderTarget = isFolder(item);
+        const dropPosition = isFolderTarget
+          ? (yRatio < 0.35 ? "before" : yRatio > 0.65 ? "after" : "inside")
+          : (yRatio < 0.5 ? "before" : "after");
+
+        row.classList.add("drop-target", `drop-${dropPosition}`);
+
+        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
+        row.dataset.insertBefore = String(event.clientY < rect.top + rect.height / 2);
+        row.dataset.targetFolderId = targetFolderId || "";
+        row.dataset.insertBeforeId = insertBeforeId || "";
+        row.dataset.dropPosition = dropPosition;
       });
 
       row.addEventListener("drop", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        clearDragExpandTimer();
 
-        const targetParentId = isFolder(item) ? item.id : null;
-        moveNodeToDestination(draggedNodeId, targetParentId, null);
+        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
+        moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
         draggedNodeId = null;
         clearHoldTimer();
         renderFolderList();
       });
 
       row.addEventListener("dragend", () => {
-        row.classList.remove("drag-source", "drop-target");
+        row.classList.remove("drag-source", "drop-target", "drop-before", "drop-after", "drop-inside");
+        clearDropHighlights();
+        clearDragExpandTimer();
         draggedNodeId = null;
         clearHoldTimer();
       });
@@ -656,20 +842,45 @@ document.addEventListener("DOMContentLoaded", () => {
   if (folderList) {
     folderList.addEventListener("dragover", (event) => {
       if (!draggedNodeId) return;
-      event.preventDefault();
-      folderList.classList.add("drop-root");
-    });
 
-    folderList.addEventListener("dragleave", () => {
+      clearDropHighlights();
+      const targetRow = getHoveredFolderRow(event);
+      if (!targetRow) {
+        event.preventDefault();
+        folderList.classList.add("drop-root");
+        clearDragExpandTimer();
+        return;
+      }
+
+      const targetNode = findNodeById(targetRow.dataset.nodeId);
+      if (targetNode && isFolder(targetNode) && !expandedFolderIds.has(targetNode.id)) {
+        scheduleFolderExpand(targetNode.id);
+      } else {
+        clearDragExpandTimer();
+      }
+
       folderList.classList.remove("drop-root");
+      event.preventDefault();
     });
 
     folderList.addEventListener("drop", (event) => {
       event.preventDefault();
       event.stopPropagation();
       folderList.classList.remove("drop-root");
+      clearDropHighlights();
+      clearDragExpandTimer();
 
-      moveNodeToDestination(draggedNodeId, null, null);
+      const targetRow = getHoveredFolderRow(event);
+      if (!targetRow || !targetRow.dataset.nodeId) {
+        moveNodeToDestination(draggedNodeId, null, null);
+        draggedNodeId = null;
+        clearHoldTimer();
+        renderFolderList();
+        return;
+      }
+
+      const { targetFolderId, insertBeforeId } = getDropLocation(targetRow.dataset.nodeId, event.clientY);
+      moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
       draggedNodeId = null;
       clearHoldTimer();
       renderFolderList();
