@@ -358,6 +358,8 @@ function addFolder() {
 }
 
 function addChat() {
+  console.log("addChat が呼ばれた");
+
   const selectedNode = selectedFolderId
     ? findNodeById(selectedFolderId)
     : null;
@@ -366,6 +368,9 @@ function addChat() {
     selectedNode && isFolder(selectedNode)
       ? selectedNode
       : findParentFolder(selectedFolderId || "");
+
+  console.log("selectedNode =", selectedNode);
+  console.log("parentFolder =", parentFolder);
 
   if (!parentFolder) {
     alert("フォルダを選択してください");
