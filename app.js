@@ -246,6 +246,16 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
   targetArray.splice(insertIndex, 0, draggedNode);
 }
 
+function getHoveredFolderRow(event) {
+  const target = event.target;
+  if (target instanceof Element) {
+    const row = target.closest(".folder-row");
+    if (row) return row;
+  }
+
+  return document.elementFromPoint(event.clientX, event.clientY)?.closest(".folder-row") || null;
+}
+
 function getDropLocation(targetNodeId, clientY) {
   if (!targetNodeId) return { targetFolderId: null, insertBeforeId: null };
 
@@ -689,14 +699,20 @@ document.addEventListener("DOMContentLoaded", () => {
   if (folderList) {
     folderList.addEventListener("dragover", (event) => {
       if (!draggedNodeId) return;
-      const targetRow = document.elementFromPoint(event.clientX, event.clientY)?.closest(".folder-row");
+      const targetRow = getHoveredFolderRow(event);
       if (!targetRow) {
-        folderList.classList.remove("drop-root");
+        event.preventDefault();
+        folderList.classList.add("drop-root");
         clearDragExpandTimer();
         return;
       }
+
+      folderList.classList.remove("drop-root");
       event.preventDefault();
-      folderList.classList.add("drop-root");
+    });
+
+    folderList.addEventListener("dragleave", () => {
+      folderList.classList.remove("drop-root");
     });
 
     folderList.addEventListener("drop", (event) => {
@@ -705,8 +721,12 @@ document.addEventListener("DOMContentLoaded", () => {
       folderList.classList.remove("drop-root");
       clearDragExpandTimer();
 
-      const targetRow = document.elementFromPoint(event.clientX, event.clientY)?.closest(".folder-row");
+      const targetRow = getHoveredFolderRow(event);
       if (!targetRow || !targetRow.dataset.nodeId) {
+        moveNodeToDestination(draggedNodeId, null, null);
+        draggedNodeId = null;
+        clearHoldTimer();
+        renderFolderList();
         return;
       }
 
