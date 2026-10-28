@@ -245,6 +245,33 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
   targetArray.splice(insertIndex, 0, draggedNode);
 }
 
+function getDropLocation(targetNodeId, clientY) {
+  const targetNode = findNodeById(targetNodeId);
+  if (!targetNode) return { targetFolderId: null, insertBeforeId: null };
+
+  if (isFolder(targetNode)) {
+    return { targetFolderId: targetNode.id, insertBeforeId: null };
+  }
+
+  const parentFolder = findParentFolder(targetNodeId) || null;
+  const parentArray = parentFolder ? parentFolder.children : folders;
+  const index = parentArray.findIndex((item) => item.id === targetNodeId);
+
+  if (index === -1) {
+    return { targetFolderId: parentFolder ? parentFolder.id : null, insertBeforeId: null };
+  }
+
+  const row = document.querySelector(`[data-node-id="${CSS.escape(targetNodeId)}"]`);
+  const rect = row?.getBoundingClientRect();
+  const isBefore = rect ? clientY < rect.top + rect.height / 2 : true;
+  const nextSiblingId = parentArray[index + 1]?.id ?? null;
+
+  return {
+    targetFolderId: parentFolder ? parentFolder.id : null,
+    insertBeforeId: isBefore ? targetNodeId : nextSiblingId,
+  };
+}
+
 function clearHoldTimer() {
   if (holdTimer) {
     clearTimeout(holdTimer);
@@ -497,19 +524,22 @@ function renderFolderList() {
         event.preventDefault();
         event.dataTransfer.dropEffect = "move";
 
+        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
         const rect = row.getBoundingClientRect();
         const isBefore = event.clientY < rect.top + rect.height / 2;
 
         row.classList.add("drop-target");
         row.dataset.insertBefore = String(isBefore);
+        row.dataset.targetFolderId = targetFolderId || "";
+        row.dataset.insertBeforeId = insertBeforeId || "";
       });
 
       row.addEventListener("drop", (event) => {
         event.preventDefault();
         event.stopPropagation();
 
-        const targetParentId = isFolder(item) ? item.id : null;
-        moveNodeToDestination(draggedNodeId, targetParentId, null);
+        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
+        moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
         draggedNodeId = null;
         clearHoldTimer();
         renderFolderList();
