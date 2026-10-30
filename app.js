@@ -297,29 +297,55 @@ function findParentFolder(nodeId, items = folders, parentFolder = null) {
     if (item.id === nodeId) return parentFolder;
     if (isFolder(item) && item.children && item.children.length) {
       const found = findParentFolder(nodeId, item.children, item);
-      if (found !== undefined) return found;
+      if (found) return found;
     }
   }
   return null;
 }
 
-function findNodeContext(nodeId, items = folders) {
+function findNodePath(nodeId, items = folders, currentPath = []) {
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
+    const nextPath = [...currentPath, index];
 
     if (item.id === nodeId) {
-      return { item, parentArray: items, index };
+      return nextPath;
     }
 
-    if (isFolder(item) && item.children && item.children.length) {
-      const childContext = findNodeContext(nodeId, item.children);
-      if (childContext) {
-        return childContext;
-      }
+    if (isFolder(item) && Array.isArray(item.children) && item.children.length) {
+      const nestedPath = findNodePath(nodeId, item.children, nextPath);
+      if (nestedPath) return nestedPath;
     }
   }
 
   return null;
+}
+
+function getArrayFromPath(path, items = folders) {
+  if (!Array.isArray(path) || path.length === 0) return items;
+
+  let current = items;
+  for (const index of path) {
+    if (!Array.isArray(current) || index < 0 || index >= current.length) {
+      return null;
+    }
+    const item = current[index];
+    if (!isFolder(item) || !Array.isArray(item.children)) {
+      return null;
+    }
+    current = item.children;
+  }
+  return current;
+}
+
+function findNodeContext(nodeId, items = folders) {
+  const path = findNodePath(nodeId, items);
+  if (!path) return null;
+
+  const parentArray = getArrayFromPath(path.slice(0, -1), items);
+  const index = path[path.length - 1];
+
+  return { item: findNodeById(nodeId, items), parentArray, index, path };
 }
 
 function containsNodeId(folderId, targetId) {
@@ -357,6 +383,19 @@ function removeNodeById(nodeId, items = folders) {
   return false;
 }
 
+function resolveDropToArray(targetFolderId = null, insertBeforeId = null) {
+  const targetFolder = targetFolderId ? findNodeById(targetFolderId) : null;
+  const targetArray = targetFolder && isFolder(targetFolder) ? targetFolder.children : folders;
+
+  let insertIndex = targetArray.length;
+  if (insertBeforeId) {
+    const index = targetArray.findIndex((item) => item.id === insertBeforeId);
+    if (index !== -1) insertIndex = index;
+  }
+
+  return { targetArray, insertIndex };
+}
+
 function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = null) {
   if (!nodeId) return;
 
@@ -367,29 +406,25 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
   if (!sourceContext) return;
 
   const targetFolder = targetFolderId ? findNodeById(targetFolderId) : null;
-
   if (
     isFolder(draggedNode) &&
     targetFolder &&
     isFolder(targetFolder) &&
-    containsNodeId(draggedNode.id, targetFolder.id)
+    (targetFolder.id === draggedNode.id || containsNodeId(draggedNode.id, targetFolder.id))
   ) {
     return;
   }
 
+  const { targetArray, insertIndex } = resolveDropToArray(targetFolderId, insertBeforeId);
+  if (!Array.isArray(sourceContext.parentArray) || !Array.isArray(targetArray)) return;
+
   sourceContext.parentArray.splice(sourceContext.index, 1);
 
-  const targetArray = targetFolder && isFolder(targetFolder)
-    ? targetFolder.children
-    : folders;
-
-  let insertIndex = targetArray.length;
-  if (insertBeforeId) {
-    const index = targetArray.findIndex((item) => item.id === insertBeforeId);
-    if (index !== -1) insertIndex = index;
-  }
-
-  targetArray.splice(insertIndex, 0, draggedNode);
+  const adjustedIndex =
+    sourceContext.parentArray === targetArray && sourceContext.index < insertIndex
+      ? insertIndex - 1
+      : insertIndex;
+  targetArray.splice(Math.min(adjustedIndex, targetArray.length), 0, draggedNode);
 }
 
 function getHoveredFolderRow(event) {
@@ -403,11 +438,12 @@ function getHoveredFolderRow(event) {
 }
 
 function getDropLocation(targetNodeId, clientY) {
-  if (!targetNodeId) return { targetFolderId: null, insertBeforeId: null };
+  if (!targetNodeId) return { targetFolderId: null, insertBeforeId: null, path: null };
 
   const targetNode = findNodeById(targetNodeId);
-  if (!targetNode) return { targetFolderId: null, insertBeforeId: null };
+  if (!targetNode) return { targetFolderId: null, insertBeforeId: null, path: null };
 
+  const path = findNodePath(targetNodeId);
   const parentFolder = findParentFolder(targetNodeId) || null;
   const parentArray = parentFolder ? parentFolder.children : folders;
   const index = parentArray.findIndex((item) => item.id === targetNodeId);
@@ -416,6 +452,7 @@ function getDropLocation(targetNodeId, clientY) {
     return {
       targetFolderId: parentFolder ? parentFolder.id : null,
       insertBeforeId: null,
+      path,
     };
   }
 
@@ -423,8 +460,9 @@ function getDropLocation(targetNodeId, clientY) {
   const rect = row?.getBoundingClientRect();
   if (!rect) {
     return {
-      targetFolderId: isFolder(targetNode) ? targetNode.id : (parentFolder ? parentFolder.id : null),
+      targetFolderId: isFolder(targetNode) ? targetNode.id : parentFolder ? parentFolder.id : null,
       insertBeforeId: null,
+      path,
     };
   }
 
@@ -436,6 +474,7 @@ function getDropLocation(targetNodeId, clientY) {
       return {
         targetFolderId: parentFolder ? parentFolder.id : null,
         insertBeforeId: targetNodeId,
+        path,
       };
     }
 
@@ -443,12 +482,14 @@ function getDropLocation(targetNodeId, clientY) {
       return {
         targetFolderId: parentFolder ? parentFolder.id : null,
         insertBeforeId: nextSiblingId,
+        path,
       };
     }
 
     return {
       targetFolderId: targetNode.id,
       insertBeforeId: null,
+      path,
     };
   }
 
@@ -456,12 +497,14 @@ function getDropLocation(targetNodeId, clientY) {
     return {
       targetFolderId: parentFolder ? parentFolder.id : null,
       insertBeforeId: targetNodeId,
+      path,
     };
   }
 
   return {
     targetFolderId: parentFolder ? parentFolder.id : null,
     insertBeforeId: nextSiblingId,
+    path,
   };
 }
 
@@ -719,18 +762,6 @@ function renderFolderList() {
         row.dataset.dropPosition = dropPosition;
       });
 
-      row.addEventListener("drop", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        clearDragExpandTimer();
-
-        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
-        moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
-        draggedNodeId = null;
-        clearHoldTimer();
-        renderFolderList();
-      });
-
       row.addEventListener("dragend", () => {
         row.classList.remove("drag-source", "drop-target", "drop-before", "drop-after", "drop-inside");
         clearDropHighlights();
@@ -839,22 +870,24 @@ document.addEventListener("DOMContentLoaded", () => {
     folderList.addEventListener("drop", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!draggedNodeId) return;
+
+      const nodeId = draggedNodeId;
+      draggedNodeId = null;
       folderList.classList.remove("drop-root");
       clearDropHighlights();
       clearDragExpandTimer();
 
       const targetRow = getHoveredFolderRow(event);
       if (!targetRow || !targetRow.dataset.nodeId) {
-        moveNodeToDestination(draggedNodeId, null, null);
-        draggedNodeId = null;
+        moveNodeToDestination(nodeId, null, null);
         clearHoldTimer();
         renderFolderList();
         return;
       }
 
       const { targetFolderId, insertBeforeId } = getDropLocation(targetRow.dataset.nodeId, event.clientY);
-      moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
-      draggedNodeId = null;
+      moveNodeToDestination(nodeId, targetFolderId, insertBeforeId);
       clearHoldTimer();
       renderFolderList();
     });
