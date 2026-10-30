@@ -297,7 +297,7 @@ function findParentFolder(nodeId, items = folders, parentFolder = null) {
     if (item.id === nodeId) return parentFolder;
     if (isFolder(item) && item.children && item.children.length) {
       const found = findParentFolder(nodeId, item.children, item);
-      if (found !== undefined) return found;
+      if (found) return found;
     }
   }
   return null;
@@ -325,18 +325,15 @@ function getArrayFromPath(path, items = folders) {
   if (!Array.isArray(path) || path.length === 0) return items;
 
   let current = items;
-  for (let i = 0; i < path.length; i += 1) {
-    const nextIndex = path[i];
-    if (!Array.isArray(current) || nextIndex < 0 || nextIndex >= current.length) {
+  for (const index of path) {
+    if (!Array.isArray(current) || index < 0 || index >= current.length) {
       return null;
     }
-    const nextItem = current[nextIndex];
-    if (i < path.length - 1) {
-      if (!isFolder(nextItem) || !Array.isArray(nextItem.children)) {
-        return null;
-      }
-      current = nextItem.children;
+    const item = current[index];
+    if (!isFolder(item) || !Array.isArray(item.children)) {
+      return null;
     }
+    current = item.children;
   }
   return current;
 }
@@ -413,15 +410,21 @@ function moveNodeToDestination(nodeId, targetFolderId = null, insertBeforeId = n
     isFolder(draggedNode) &&
     targetFolder &&
     isFolder(targetFolder) &&
-    containsNodeId(draggedNode.id, targetFolder.id)
+    (targetFolder.id === draggedNode.id || containsNodeId(draggedNode.id, targetFolder.id))
   ) {
     return;
   }
 
+  const { targetArray, insertIndex } = resolveDropToArray(targetFolderId, insertBeforeId);
+  if (!Array.isArray(sourceContext.parentArray) || !Array.isArray(targetArray)) return;
+
   sourceContext.parentArray.splice(sourceContext.index, 1);
 
-  const { targetArray, insertIndex } = resolveDropToArray(targetFolderId, insertBeforeId);
-  targetArray.splice(insertIndex, 0, draggedNode);
+  const adjustedIndex =
+    sourceContext.parentArray === targetArray && sourceContext.index < insertIndex
+      ? insertIndex - 1
+      : insertIndex;
+  targetArray.splice(Math.min(adjustedIndex, targetArray.length), 0, draggedNode);
 }
 
 function getHoveredFolderRow(event) {
@@ -759,18 +762,6 @@ function renderFolderList() {
         row.dataset.dropPosition = dropPosition;
       });
 
-      row.addEventListener("drop", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        clearDragExpandTimer();
-
-        const { targetFolderId, insertBeforeId } = getDropLocation(item.id, event.clientY);
-        moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
-        draggedNodeId = null;
-        clearHoldTimer();
-        renderFolderList();
-      });
-
       row.addEventListener("dragend", () => {
         row.classList.remove("drag-source", "drop-target", "drop-before", "drop-after", "drop-inside");
         clearDropHighlights();
@@ -879,22 +870,24 @@ document.addEventListener("DOMContentLoaded", () => {
     folderList.addEventListener("drop", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!draggedNodeId) return;
+
+      const nodeId = draggedNodeId;
+      draggedNodeId = null;
       folderList.classList.remove("drop-root");
       clearDropHighlights();
       clearDragExpandTimer();
 
       const targetRow = getHoveredFolderRow(event);
       if (!targetRow || !targetRow.dataset.nodeId) {
-        moveNodeToDestination(draggedNodeId, null, null);
-        draggedNodeId = null;
+        moveNodeToDestination(nodeId, null, null);
         clearHoldTimer();
         renderFolderList();
         return;
       }
 
       const { targetFolderId, insertBeforeId } = getDropLocation(targetRow.dataset.nodeId, event.clientY);
-      moveNodeToDestination(draggedNodeId, targetFolderId, insertBeforeId);
-      draggedNodeId = null;
+      moveNodeToDestination(nodeId, targetFolderId, insertBeforeId);
       clearHoldTimer();
       renderFolderList();
     });
