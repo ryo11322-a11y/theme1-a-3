@@ -6,12 +6,13 @@ const createFolder = (id, name, children = []) => ({
   children,
 });
 
-const createChat = (id, name, unread = 1) => ({
+const createChat = (id, name, unread = 1, isNew = false) => ({
   id,
   type: "chat",
   name,
   unread,
   children: [],
+  isNew,
 });
 
 const folders = [
@@ -45,7 +46,7 @@ let dragExpandTimer = null;
 let dragExpandFolderId = null;
 let pendingNewFolderId = null;
 
-function setRenameModalMode(mode) {
+function setRenameModalMode(mode, nodeType = "folder") {
   const modal = document.getElementById("renameModal");
   if (!modal) return;
 
@@ -57,26 +58,31 @@ function setRenameModalMode(mode) {
     modal.querySelector("h3");
 
   if (titleEl) {
-    titleEl.textContent = mode === "create" ? "フォルダを追加" : "フォルダ名を変更";
+    if (mode === "create") {
+      titleEl.textContent = nodeType === "chat" ? "チャットを追加" : "フォルダを追加";
+      return;
+    }
+
+    titleEl.textContent = nodeType === "chat" ? "チャット名を変更" : "フォルダ名を変更";
   }
 
   modal.dataset.mode = mode;
 }
 
-function openRenameModal(folderId, mode = "rename") {
-  const folder = findNodeById(folderId);
-  if (!folder || !isFolder(folder)) return;
+function openRenameModal(nodeId, mode = "rename") {
+  const node = findNodeById(nodeId);
+  if (!node) return;
 
-  renamingFolderId = folderId;
-  selectedFolderId = folderId;
-  pendingNewFolderId = mode === "create" ? folderId : null;
+  renamingFolderId = nodeId;
+  selectedFolderId = nodeId;
+  pendingNewFolderId = mode === "create" ? nodeId : null;
 
   const input = document.getElementById("renameInput");
   const modal = document.getElementById("renameModal");
   if (!input || !modal) return;
 
-  setRenameModalMode(mode);
-  input.value = folder.name || "";
+  setRenameModalMode(mode, node.type);
+  input.value = node.name || "";
   modal.classList.add("show");
   modal.setAttribute("aria-hidden", "false");
   setTimeout(() => input.focus(), 50);
@@ -92,11 +98,11 @@ function closeRenameModal() {
 function saveFolderName() {
   if (!renamingFolderId) return;
 
-  const folder = findNodeById(renamingFolderId);
-  if (!folder || !isFolder(folder)) return;
+  const node = findNodeById(renamingFolderId);
+  if (!node) return;
 
   const input = document.getElementById("renameInput");
-  folder.name = normalizeName(input?.value || "");
+  node.name = normalizeName(input?.value || "");
 
   pendingNewFolderId = null;
   renamingFolderId = null;
@@ -146,7 +152,8 @@ function handleAddTypeSelection(type) {
     const newChat = createChat(
       `chat-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       "新しいチャット",
-      1
+      1,
+      true
     );
 
     targetArray.push(newChat);
@@ -249,6 +256,16 @@ function updateContentPanel() {
     const nameEl = document.querySelector(".channel-name");
     selectedNode.unread = 0;
     if (nameEl) nameEl.textContent = normalizeName(selectedNode.name || "Untitled");
+
+    if (selectedNode.isNew) {
+      if (messageList) messageList.innerHTML = "";
+      if (composer) {
+        composer.innerHTML = "";
+        composer.setAttribute("aria-label", "新しいチャット");
+      }
+      return;
+    }
+
     if (messageList) {
       const testMessage = "これはテストです。チャットは機能しません。本来はここにチャットの画面が表示されます。";
       messageList.innerHTML = `
@@ -560,17 +577,27 @@ function scheduleFolderExpand(folderId) {
 }
 
 function openDeleteModal(folderId) {
-  const folder = findNodeById(folderId);
-  if (!folder || !isFolder(folder)) return;
+  const item = findNodeById(folderId);
+  if (!item) return;
 
   deleteTargetId = folderId;
   selectedFolderId = folderId;
 
   const modal = document.getElementById("deleteModal");
   const label = document.getElementById("deleteFolderName");
+  const title = modal?.querySelector("h3");
   if (!modal || !label) return;
 
-  label.textContent = normalizeName(folder.name || "Untitled");
+  if (title) {
+    title.textContent = item.type === "chat" ? "チャットを削除" : "フォルダを削除";
+  }
+
+  label.textContent = normalizeName(item.name || "Untitled");
+  const description = modal.querySelector("p");
+  if (description) {
+    description.innerHTML = `本当に <strong id="deleteFolderName">${normalizeName(item.name || "Untitled")}</strong> を削除しますか？`;
+  }
+
   modal.classList.add("show");
   modal.setAttribute("aria-hidden", "false");
 }
@@ -662,29 +689,27 @@ function renderFolderList() {
       const actions = document.createElement("div");
       actions.className = "folder-actions";
 
-      if (isItemFolder) {
-        const renameBtn = document.createElement("button");
-        renameBtn.type = "button";
-        renameBtn.className = "mini-action";
-        renameBtn.textContent = "✎";
-        renameBtn.setAttribute("aria-label", `${item.name} を名前変更`);
-        renameBtn.addEventListener("click", (event) => {
-          event.stopPropagation();
-          openRenameModal(item.id);
-        });
+      const renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.className = "mini-action";
+      renameBtn.textContent = "✎";
+      renameBtn.setAttribute("aria-label", `${item.name} を名前変更`);
+      renameBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openRenameModal(item.id);
+      });
+      actions.appendChild(renameBtn);
 
-        const deleteBtn = document.createElement("button");
-        deleteBtn.type = "button";
-        deleteBtn.className = "mini-action";
-        deleteBtn.textContent = "🗑";
-        deleteBtn.setAttribute("aria-label", `${item.name} を削除`);
-        deleteBtn.addEventListener("click", (event) => {
-          event.stopPropagation();
-          openDeleteModal(item.id);
-        });
-
-        actions.append(renameBtn, deleteBtn);
-      }
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "mini-action";
+      deleteBtn.textContent = "🗑";
+      deleteBtn.setAttribute("aria-label", `${item.name} を削除`);
+      deleteBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openDeleteModal(item.id);
+      });
+      actions.appendChild(deleteBtn);
 
       row.append(toggleWrap, nameWrap, count, actions);
       row.addEventListener("click", (event) => {
@@ -793,9 +818,6 @@ function renderFolderList() {
 document.addEventListener("DOMContentLoaded", () => {
   const addFolderButton = document.getElementById("addFolderButton");
   if (addFolderButton) addFolderButton.addEventListener("click", showAddTypeModal);
-
-  const addChatButton = document.getElementById("addChatButton");
-  if (addChatButton) addChatButton.addEventListener("click", showAddTypeModal);
 
   const addTypeButtons = document.querySelectorAll("[data-add-type]");
   addTypeButtons.forEach((button) => {
