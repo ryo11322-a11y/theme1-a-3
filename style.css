@@ -727,6 +727,20 @@ button {
     pointer-events: auto;
   }
 
+  .folder-row .folder-actions,
+  .folder-row:hover .folder-actions,
+  .folder-row.active .folder-actions,
+  .folder-row:focus-within .folder-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .mini-action {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+
   .header-button {
     width: 26px;
     height: 26px;
